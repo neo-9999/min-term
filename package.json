@@ -1,0 +1,14 @@
+{
+  "name": "node-ternimal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "node-pty": "^1.0.0",
+    "ws": "^8.16.0"
+  }
+}
