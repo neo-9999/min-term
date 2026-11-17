@@ -64,17 +64,22 @@ const server = http.createServer((req, res) => {
                         term.write(event.data);
                     };
 
-                    term.onKey(({ key, domEvent }) => {
-                        let ev = domEvent;
-                        let printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
-                        if (ev.keyCode === 13) {
-                            ws.send('\\r');
-                        } else if (ev.keyCode === 8) {
-                            ws.send('\\b');
-                        } else if (printable) {
-                            ws.send(key);
-                        }
-                    });
+//                    term.onKey(({ key, domEvent }) => {
+//                        let ev = domEvent;
+//                        let printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+//                        if (ev.keyCode === 13) {
+//                            ws.send('\\r');
+//                        } else if (ev.keyCode === 8) {
+//                            ws.send('\\b');
+//                        } else if (printable) {
+//                            ws.send(key);
+//                        }
+//                    });
+
+                    term.onData((data) => {
+                          ws.send(data);
+                    });                    
+
 
                     window.addEventListener('resize', () => fitAddon.fit());
                 </script>
