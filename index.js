@@ -4,6 +4,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 //for download files.
 const fs = require('fs');
+const pty = require('node-pty');
 
 require('dotenv').config();
 const PORT = process.env.PORT || 14484;
@@ -52,6 +53,7 @@ const server = http.createServer((req, res) => {
                     // 自动适配 HTTPS 对应的 wss:// 协议
                     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const ws = new WebSocket(\`\${protocol}//\${location.host}\`);
+                    
                     ws.onopen = () => {
                         setInterval(() => {
                             if (ws.readyState === 1) { // 1 代表 WebSocket.OPEN
@@ -75,12 +77,19 @@ const server = http.createServer((req, res) => {
 //                            ws.send(key);
 //                        }
 //                    });
-
                     term.onData((data) => {
                           ws.send(data);
                     });                    
-
-
+//                    document.getElementById('terminal').addEventListener('contextmenu', async (e) => {
+//                          e.preventDefault(); // 阻止浏览器默认的右键菜单
+//                          try {
+//                                const text = await navigator.clipboard.readText();
+//                                ws.send(text);
+//                          } catch (err) {
+//                                // 忽略剪贴板读取被拒绝的情况
+//                          }
+//                    });
+                    
                     window.addEventListener('resize', () => fitAddon.fit());
                 </script>
             </body>
@@ -121,41 +130,31 @@ wss.on('connection', (ws) => {
                 if (passBuffer === PASSWORD) {
                     authenticated = true;
                     ws.send("\r\nAccess Granted. Welcome to the container shell!\r\n\r\n");
+                    
+                  
                     // 使用系统自带的 /bin/sh（Alpine 默认自带，绝对不需要安装 Python）
-                    shell = spawn('/bin/sh', [], {
-                        cwd: __dirname,
-                        env: process.env ,
-                        stdio: ['pipe', 'pipe', 'pipe']
+                  
+                    shell = pty.spawn('/bin/sh', ['-l'], {
+                        name: 'xterm-color',
+                        cols: 80,
+                        rows: 30,
+                        cwd: __dirname ,
+                        env: process.env
                     });
 
+                    
                     // 实时将 shell 输出返回给网页
-                    shell.stdout.on('data', (data) => {
-                        let outputStr = data.toString();
-
-                        if (outputStr.includes('---EOF-9527---')) {
-                            outputStr = outputStr.replace('---EOF-9527---', '').trimEnd();
-                            let text = outputStr.replace(/\r?\n/g, '\r\n');
-
-                            if ( text.length >0 ){
-                               ws.send(text);
-                               if ( !text.endsWith('\r\n') ) ws.send('\r\n');
-                            }
-
-                            ws.send("# ");
-                            return;
-                        }
-                        let text = outputStr.replace(/\r?\n/g, '\r\n');
-                        ws.send( text );
+                    shell.onData((data) => {
+                        ws.send(data);
                     });
-
-
-                    shell.stderr.on('data', (data) => {
-                        let text = data.toString().replace(/\r?\n/g, '\r\n');
-                        ws.send( text );
+                    
+                    ws.on('message', (msg) => {
+                        if ( shell ) {
+                          let input = msg.toString();
+                          if (input === '\x7f' || input === '\b') shell.write('\x7f');
+                          else if ( !(input === '\x00') ) shell.write(msg);
+                        }
                      });
-
-
-                    shell.stdin.write('alias ls="ls --color"; echo -n "# "\n');
 
 
                     shell.on('exit', () => {
@@ -174,24 +173,7 @@ wss.on('connection', (ws) => {
                 passBuffer += input;
                 ws.send('*');
             }
-        } else {
-            // 认证通过后，将用户输入交个标准 shell
-            if (shell && shell.stdin.writable) {
-                if (input.includes('\r') || input.includes('\n')) {
-                    shell.stdin.write( cmdBuffer + '\necho "---EOF-9527---"\n' );
-                    ws.send('\r\n');  //local echo
-                    cmdBuffer = '';
-                } else if (input === '\b' || input === '\x7f') {
-                    if (cmdBuffer.length > 0) {
-                      cmdBuffer = cmdBuffer.slice(0, -1);
-                      ws.send('\b \b');
-                    }
-                }else {
-                    ws.send( input );  //local echo
-                    cmdBuffer += input;
-                }
-            }
-        }
+        } 
     });
 
     ws.on('close', () => {
