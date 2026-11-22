@@ -1,6 +1,6 @@
 const http = require('http');
 const { handleSyncRequest } = require('./syncMiddleware');
-const { startCloudflareTunnel } = require('./cloudflareTunnel.js');
+const { startCloudflareTunnel, stopCloudflareTunnel } = require('./cloudflareTunnel.js');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -217,6 +217,7 @@ wss.on('connection', (ws) => {
 });
 
 function shutdown() {
+  stopCloudflareTunnel();
   wss.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1000);
