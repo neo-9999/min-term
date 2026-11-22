@@ -2,7 +2,6 @@ const http = require('http');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-//for download files.
 const fs = require('fs');
 const pty = require('node-pty');
 
@@ -188,8 +187,6 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
-    //initAndExtractBinaries();
-   // initBackgroundServices();
 });
 
 
