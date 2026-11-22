@@ -1,26 +1,58 @@
-const fs = require('fs');
-const cloudflaredFile = path.join(WORK_DIR, 'cloudflared');
-const downloadUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'
+'use strict';
 
-function initCloudflared() {
-   if (fs.existsSync(cloudflaredFile)) {
-     return true;
-   }
-   try {
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
+
+const WORK_DIR = process.env.HOME || os.homedir() || '/tmp';
+const cloudflaredFile = path.join(WORK_DIR, 'cloudflared');
+
+// Node.js process.arch 到 cloudflared 官方发布文件名的映射
+const ARCH_MAP = {
+    x64: 'amd64',
+    arm64: 'arm64',
+    arm: 'arm',
+    ia32: '386'
+};
+
+let tunnelProc = null;
+let isShuttingDown = false;
+
+function getDownloadUrl() {
+    const cfArch = ARCH_MAP[process.arch];
+    if (!cfArch) {
+        throw new Error(`Unsupported CPU architecture: ${process.arch}`);
+    }
+    return `https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cfArch}`;
+}
+
+async function initCloudflared() {
+    if (fs.existsSync(cloudflaredFile)) {
+        return true;
+    }
+    try {
+        if (!fs.existsSync(WORK_DIR)) {
+            fs.mkdirSync(WORK_DIR, { recursive: true });
+        }
+        const downloadUrl = getDownloadUrl();
+        console.log(`[Init] Detected arch: ${process.arch}, downloading cloudflared...`);
         const res = await fetch(downloadUrl);
         if (!res.ok) {
             throw new Error(`HTTP ${res.status} ${res.statusText}`);
         }
         await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(cloudflaredFile));
-        if (fs.existsSync(cloudflaredFile)) {
-          fs.chmodSync(cloudflaredFile, 0o755);
-          return true;
-        }
-        else return false;
-   } catch (err) {
+        fs.chmodSync(cloudflaredFile, 0o755);
+        console.log('[Init] cloudflared ready.');
+        return true;
+    } catch (err) {
         console.error('[Init] Failed to setup binaries:', err.message);
+        if (fs.existsSync(cloudflaredFile)) {
+            try { fs.unlinkSync(cloudflaredFile); } catch (_) {}
+        }
         return false;
-   }   
+    }
 }
 
 function startDaemon(name, command, args, extraEnv = {}) {
@@ -29,11 +61,9 @@ function startDaemon(name, command, args, extraEnv = {}) {
         return;
     }
     console.log(`[Daemon] Starting ${name}...`);
-    let proc;
     try {
-        proc = spawn(command, args, {
+        tunnelProc = spawn(command, args, {
             cwd: WORK_DIR,
-            // 确保 Caddy/Xray 等进程的数据和缓存目录都落在可写的 WORK_DIR
             env: {
                 ...process.env,
                 HOME: WORK_DIR,
@@ -41,45 +71,57 @@ function startDaemon(name, command, args, extraEnv = {}) {
                 XDG_CONFIG_HOME: path.join(WORK_DIR, '.config'),
                 ...extraEnv
             },
-            stdio: ['ignore', 'pipe', 'pipe']
+            stdio: ['ignore', 'ignore', 'pipe']
         });
     } catch (err) {
         console.error(`[Daemon] Failed to start ${name}: ${err.message}`);
         return;
     }
 
-    proc.on('error', (err) => {
+    tunnelProc.on('error', (err) => {
         console.error(`[Daemon] Process error for ${name}: ${err.message}`);
     });
 
-    if (proc.stderr) {
-        proc.stderr.on('data', (data) => {
-            console.error(`[${name} Error] ${data.toString().trim()}`);
+    if (tunnelProc.stderr) {
+        tunnelProc.stderr.on('data', (data) => {
+            const msg = data.toString().trim();
+            if (msg) console.error(`[${name} Error] ${msg}`);
         });
     }
 
-    proc.on('close', (code) => {
+    tunnelProc.on('close', (code) => {
         console.log(`[Daemon] ${name} exited with code ${code}.`);
+        tunnelProc = null;
+        if (!isShuttingDown) {
+            setTimeout(() => startDaemon(name, command, args, extraEnv), 5000);
+        }
     });
 }
 
-function startCloudflareTunnel( cfToken )
-{
-  if (cfToken) 
-      if ( initCloudflared() ){
+async function startCloudflareTunnel(cfToken) {
+    if (!cfToken) {
+        console.log('[Daemon] CF_TOKEN is empty, skipping Cloudflared.');
+        return;
+    }
+    const ok = await initCloudflared();
+    if (ok && !isShuttingDown) {
         startDaemon(
             'Cloudflared',
-            cloudflareFiled,
+            cloudflaredFile,
             [
                 'tunnel', '--no-autoupdate', '--edge-ip-version', '4',
                 '--loglevel', 'error', '--protocol', 'http2', 'run'
             ],
             { TUNNEL_TOKEN: cfToken }
         );
-      }
-    } else {
-        console.log('[Daemon] CF_TOKEN is empty, skipping Cloudflared.');
-  }
+    }
 }
 
-module.exports = { startCloudflareTunnel };
+function stopCloudflareTunnel() {
+    isShuttingDown = true;
+    if (tunnelProc && !tunnelProc.killed) {
+        tunnelProc.kill('SIGTERM');
+    }
+}
+
+module.exports = { startCloudflareTunnel, stopCloudflareTunnel };
