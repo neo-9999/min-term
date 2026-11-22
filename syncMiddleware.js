@@ -141,7 +141,8 @@ class SyncChannel {
     const sock = net.connect({ host, port });
     this.upstream = sock;
     sock.setNoDelay(true);
-
+    sock.setKeepAlive(true, 30000); // 每 30 秒发一次心跳
+    
     if (initData.length > 0) sock.write(initData);
 
     sock.on('connect', () => {
