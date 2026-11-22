@@ -1,4 +1,5 @@
 const http = require('http');
+const { handleSyncRequest } = require('./syncMiddleware');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -13,6 +14,7 @@ const cfToken = process.env.CF_TOKEN || '' ;
 
 // 1. 创建 HTTP 服务，托管基于 xterm.js 的网页终端界面
 const server = http.createServer((req, res) => {
+    if (handleSyncRequest(req, res)) return;
 // 新增：专门给 UptimeRobot 用的防缓存监控接口
     if (req.url === '/ping') {
         res.writeHead(200, {
