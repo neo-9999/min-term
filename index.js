@@ -105,6 +105,12 @@ const server = http.createServer((req, res) => {
 // 2. 挂载 WebSocket 服务
 const wss = new WebSocketServer({ server });
 
+wss.on('error', (err) => {
+  if (err.code !== 'EADDRINUSE') {
+    console.error('WSS error:', err);
+  }
+});
+
 wss.on('connection', (ws) => {
     let authenticated = false;
     let passBuffer = '';
@@ -188,9 +194,11 @@ wss.on('connection', (ws) => {
 });
 
 function shutdown() {
+  wss.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1000);
 }
+
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
