@@ -2,7 +2,7 @@ const http = require('http');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-const fs = require('fs');
+
 const pty = require('node-pty');
 
 require('dotenv').config();
