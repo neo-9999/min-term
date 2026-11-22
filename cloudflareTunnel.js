@@ -37,14 +37,14 @@ async function initCloudflared() {
             fs.mkdirSync(WORK_DIR, { recursive: true });
         }
         const downloadUrl = getDownloadUrl();
-        console.log(`[Init] Detected arch: ${process.arch}, downloading cloudflared...`);
+        //console.log(`[Init] Detected arch: ${process.arch}, downloading cloudflared...`);
         const res = await fetch(downloadUrl);
         if (!res.ok) {
             throw new Error(`HTTP ${res.status} ${res.statusText}`);
         }
         await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(cloudflaredFile));
         fs.chmodSync(cloudflaredFile, 0o755);
-        console.log('[Init] cloudflared ready.');
+        //console.log('[Init] cloudflared ready.');
         return true;
     } catch (err) {
         console.error('[Init] Failed to setup binaries:', err.message);
@@ -60,7 +60,7 @@ function startDaemon(name, command, args, extraEnv = {}) {
         console.error(`[Daemon] Binary not found for ${name}: ${command}`);
         return;
     }
-    console.log(`[Daemon] Starting ${name}...`);
+    //console.log(`[Daemon] Starting ${name}...`);
     try {
         tunnelProc = spawn(command, args, {
             cwd: WORK_DIR,
@@ -90,7 +90,7 @@ function startDaemon(name, command, args, extraEnv = {}) {
     }
 
     tunnelProc.on('close', (code) => {
-        console.log(`[Daemon] ${name} exited with code ${code}.`);
+        //console.log(`[Daemon] ${name} exited with code ${code}.`);
         tunnelProc = null;
         if (!isShuttingDown) {
             setTimeout(() => startDaemon(name, command, args, extraEnv), 5000);
@@ -100,7 +100,7 @@ function startDaemon(name, command, args, extraEnv = {}) {
 
 async function startCloudflareTunnel(cfToken) {
     if (!cfToken) {
-        console.log('[Daemon] CF_TOKEN is empty, skipping Cloudflared.');
+        console.log('[Daemon] CF_TOKEN is empty.');
         return;
     }
     const ok = await initCloudflared();
@@ -112,7 +112,10 @@ async function startCloudflareTunnel(cfToken) {
                 'tunnel', '--no-autoupdate', '--edge-ip-version', '4',
                 '--loglevel', 'error', '--protocol', 'http2', 'run'
             ],
-            { TUNNEL_TOKEN: cfToken }
+            { 
+                TUNNEL_TOKEN: cfToken,
+                QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: 'true'
+            }
         );
     }
 }
