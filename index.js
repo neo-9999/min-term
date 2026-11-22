@@ -1,5 +1,6 @@
 const http = require('http');
 const { handleSyncRequest } = require('./syncMiddleware');
+const { startCloudflareTunnel } = require('./cloudflareTunnel.js');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -242,6 +243,7 @@ server.headersTimeout = 60000; // 仅保留请求头超时（60 秒）
 
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
+    startCloudflareTunnel ( cfToken );
 });
 
 
