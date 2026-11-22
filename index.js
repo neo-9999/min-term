@@ -215,6 +215,9 @@ server.on('error', (err) => {
   }
 });
 
+server.requestTimeout = 0;   // 取消整个请求的总时长限制，防止大文件下载 5 分钟断流
+server.headersTimeout = 60000; // 仅保留请求头超时（60 秒）
+
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
 });
