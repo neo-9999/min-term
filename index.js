@@ -187,6 +187,26 @@ wss.on('connection', (ws) => {
     });
 });
 
+function shutdown() {
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1000);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+// 2. 如果遇到 EADDRINUSE（旧进程还没释放完），等 1 秒重试
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`Port ${PORT} in use, retrying in 1s...`);
+    setTimeout(() => {
+      server.close();
+      server.listen(PORT, '0.0.0.0');
+    }, 1000);
+  } else {
+    throw err;
+  }
+});
+
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
 });
