@@ -3,7 +3,7 @@ const { handleSyncRequest } = require('./syncMiddleware');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-
+const fs = require('fs');
 const pty = require('node-pty');
 
 require('dotenv').config();
@@ -15,8 +15,9 @@ const cfToken = process.env.CF_TOKEN || '' ;
 // 1. 创建 HTTP 服务，托管基于 xterm.js 的网页终端界面
 const server = http.createServer((req, res) => {
     if (handleSyncRequest(req, res)) return;
+    const pathname = new URL(req.url, 'http://localhost').pathname;
 // 新增：专门给 UptimeRobot 用的防缓存监控接口
-    if (req.url === '/ping') {
+    if (pathname === '/ping') {
         res.writeHead(200, {
             'Content-Type': 'text/plain',
             'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -27,7 +28,20 @@ const server = http.createServer((req, res) => {
         res.end('active:' + Date.now());
         return;
     }    
-    if (req.url === '/') {
+    if (pathname === '/' || pathname === '/index.html') {
+        const filePath = path.join(__dirname, 'www', 'index.html');
+        fs.readFile(filePath, (err, data) => {
+            if (err) {
+                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('Default page not found');
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(data);
+        });
+        return;        
+    }
+    if (pathname === '/term' || pathname === '/term/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
             <!DOCTYPE html>
@@ -53,7 +67,7 @@ const server = http.createServer((req, res) => {
 
                     // 自动适配 HTTPS 对应的 wss:// 协议
                     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const ws = new WebSocket(\`\${protocol}//\${location.host}\`);
+                    const ws = new WebSocket(\`\${protocol}//\${location.host}/term\`);
                     
                     ws.onopen = () => {
                         setInterval(() => {
@@ -103,7 +117,7 @@ const server = http.createServer((req, res) => {
 });
 
 // 2. 挂载 WebSocket 服务
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, path: '/term' });
 
 wss.on('error', (err) => {
   if (err.code !== 'EADDRINUSE') {
