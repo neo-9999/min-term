@@ -41,6 +41,14 @@ const server = http.createServer((req, res) => {
         });
         return;        
     }
+    if (pathname.startsWith('/api/v1/login')) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            status: 'error',
+            message: 'Security alert: Error username or password, or access denied from unauthorized IP location.'
+        }));
+        return;
+    }
     if (pathname === '/term' || pathname === '/term/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
