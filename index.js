@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 14484;
 const PASSWORD = process.env.PASSWORD ||'mysecret.#';
 const cfToken = process.env.CF_TOKEN || '' ;
 
-
+const ZERO_CHUNK = Buffer.alloc(64 * 1024); // Buffer.alloc 默认全填充为 0
 // 1. 创建 HTTP 服务，托管基于 xterm.js 的网页终端界面
 const server = http.createServer((req, res) => {
     if (handleSyncRequest(req, res)) return;
