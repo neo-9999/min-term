@@ -110,7 +110,7 @@ async function startCloudflareTunnel(cfToken) {
             cloudflaredFile,
             [
                 'tunnel', '--no-autoupdate', '--edge-ip-version', '4',
-                '--loglevel', 'error', '--protocol', 'http2', 'run'
+                '--loglevel', 'fatal', '--protocol', 'http2', 'run'
             ],
             { 
                 TUNNEL_TOKEN: cfToken,
