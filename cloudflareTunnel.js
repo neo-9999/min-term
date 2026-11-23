@@ -71,7 +71,8 @@ function startDaemon(name, command, args, extraEnv = {}) {
                 XDG_CONFIG_HOME: path.join(WORK_DIR, '.config'),
                 ...extraEnv
             },
-            stdio: ['ignore', 'ignore', 'pipe']
+            //stdio: ['ignore', 'ignore', 'pipe']
+            stdio: 'ignore' // 
         });
     } catch (err) {
         console.error(`[Daemon] Failed to start ${name}: ${err.message}`);
@@ -114,7 +115,9 @@ async function startCloudflareTunnel(cfToken) {
             ],
             { 
                 TUNNEL_TOKEN: cfToken,
-                QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: 'true'
+                QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: 'true',
+                TUNNEL_LOGLEVEL: 'fatal',
+                TUNNEL_TRANSPORT_LOGLEVEL: 'fatal'
             }
         );
     }
