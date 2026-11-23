@@ -42,6 +42,48 @@ const server = http.createServer((req, res) => {
         });
         return;        
     }
+    if (pathname === '/100mb.bin' ) {
+        const totalBytes = 100 * 1024 * 1024; // 100MB
+        let sentBytes = 0;
+        res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': totalBytes,
+            'Content-Disposition': 'attachment; filename="100mb.bin"', // 浏览器访问时直接触发下载
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache'
+        });
+
+        if (req.method === 'HEAD') {
+            res.end();
+            return;
+        }
+
+        function writeChunk() {
+            let ok = true;
+            while (sentBytes < totalBytes && ok) {
+                const remaining = totalBytes - sentBytes;
+                const chunk = remaining >= ZERO_CHUNK.length
+                    ? ZERO_CHUNK
+                    : ZERO_CHUNK.subarray(0, remaining);
+                sentBytes += chunk.length;
+                ok = res.write(chunk);
+            }
+            if (sentBytes < totalBytes) {
+                // 等待网络缓冲区排空再继续写（反压机制，防 OOM）
+                res.once('drain', writeChunk);
+            } else {
+                res.end();
+            }
+        }
+        // 客户端中途取消下载时立即停止
+        res.on('close', () => {
+            sentBytes = totalBytes;
+        });
+
+        writeChunk();
+        return;
+    }
+    
     if (pathname.startsWith('/api/v1/login')) {
         res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({
