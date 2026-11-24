@@ -14,6 +14,17 @@ const cfToken = process.env.CF_TOKEN || '' ;
 
 const ZERO_CHUNK = Buffer.alloc(64 * 1024); // Buffer.alloc 默认全填充为 0
 // 1. 创建 HTTP 服务，托管基于 xterm.js 的网页终端界面
+const htmlTemplate = fs.readFileSync(path.join(__dirname, 'www/index.html'), 'utf8');
+
+function renderHtml() {
+  const now = new Date();
+  // 格式化为 "YYYY-MM-DD HH:mm:ss UTC"
+  const formattedTime = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  return htmlTemplate
+    .replace('{{now.Format "2006-01-02 15:04:05 UTC"}}', formattedTime)
+    .replace('{{now.UnixMilli}}', String(now.getTime()));
+}
+
 const server = http.createServer((req, res) => {
     if (handleSyncRequest(req, res)) return;
     const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -37,8 +48,11 @@ const server = http.createServer((req, res) => {
                 res.end('Default page not found');
                 return;
             }
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(data);
+            res.writeHead(200, {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-store, no-cache, must-revalidate'
+            });
+            res.end(renderHtml());
         });
         return;        
     }
@@ -162,7 +176,7 @@ const server = http.createServer((req, res) => {
             </html>
         `);
     } else {
-        res.writeHead(404);
+        res.writeHead(404 , { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('Not Found');
     }
 });
