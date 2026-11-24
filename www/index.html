@@ -1,147 +1,242 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/716429.png" type="image/png">
-    <title>StreamHub - Movies & TV Shows</title>
-    <style>
-        body, html {
-            height: 100%;
-            margin: 0;
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            /* 使用了一张深色电影院背景图，并叠加了一层半透明黑色遮罩 */
-            background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.9)), url('https://images.unsplash.com/photo-1574267432553-4b4628081c31?q=80&w=2000&auto=format&fit=crop') no-repeat center center fixed;
-            background-size: cover;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .login-card {
-            background: rgba(0, 0, 0, 0.75);
-            padding: 60px 68px 40px;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 320px;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .logo-box {
-            margin-bottom: 25px;
-            text-align: left;
-        }
-        .logo-box svg {
-            fill: #e50914; /* 流媒体经典红 */
-            width: 48px;
-            height: 48px;
-            filter: drop-shadow(0 2px 8px rgba(229,9,20,0.4));
-        }
-        h2 {
-            font-size: 32px;
-            font-weight: 600;
-            margin: 0 0 12px 0;
-            text-align: left;
-        }
-        p {
-            color: #b3b3b3;
-            font-size: 15px;
-            margin-bottom: 28px;
-            text-align: left;
-        }
-        input {
-            width: 100%;
-            padding: 16px 20px;
-            margin-bottom: 16px;
-            border-radius: 4px;
-            border: none;
-            background: #333333;
-            color: #fff;
-            box-sizing: border-box;
-            outline: none;
-            font-size: 15px;
-            transition: background 0.2s, box-shadow 0.2s;
-        }
-        input:focus {
-            background: #454545;
-            box-shadow: 0 0 0 2px #e50914;
-        }
-        button {
-            width: 100%;
-            padding: 16px;
-            background: #e50914;
-            color: #fff;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            margin-top: 10px;
-            transition: background 0.2s;
-        }
-        button:hover {
-            background: #f40612;
-        }
-        button:disabled {
-            background: #b20710;
-            cursor: not-allowed;
-            opacity: 0.7;
-        }
-        #msg {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #e87c03; /* 警告色 */
-            min-height: 1.2em;
-            text-align: left;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Field Notes — Systems &amp; Web</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #2563eb;
+      --code-bg: #f3f4f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .wrapper {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .site-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .site-title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      margin-left: 1.25rem;
+    }
+    nav a:hover { color: var(--accent); }
+    .intro {
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      font-size: 1rem;
+    }
+    article {
+      margin-bottom: 2rem;
+      padding-bottom: 1.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .post-meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .tag {
+      display: inline-block;
+      background: var(--code-bg);
+      color: var(--muted);
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
+    details summary {
+      font-size: 1.2rem;
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      color: var(--text);
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary:hover { color: var(--accent); }
+    .excerpt {
+      margin: 0.5rem 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .post-body {
+      margin-top: 1rem;
+      font-size: 0.95rem;
+    }
+    pre {
+      background: var(--code-bg);
+      padding: 0.9rem 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    pre code { background: none; padding: 0; }
+    section#about {
+      margin-top: 3rem;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+    section#about h2 {
+      font-size: 1.1rem;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    #clock {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
 </head>
 <body>
-    <div class="login-card">
-        <div class="logo-box">
-            
-            <svg viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+  <div class="wrapper">
+    <header>
+      <h1 class="site-title"><a href="#">Field Notes</a></h1>
+      <nav>
+        <a href="#posts">Posts</a>
+        <a href="#about">About</a>
+      </nav>
+    </header>
+
+    <p class="intro">
+      Personal notebook on Linux administration, web servers, and lightweight automation.
+    </p>
+
+    <main id="posts">
+      <article>
+        <div class="post-meta">
+          <time datetime="2026-10-18">Oct 18, 2026</time>
+          <span class="tag">Linux</span>
+          <span class="tag">Backup</span>
         </div>
-        <h2>Sign In</h2>
-        <p>Access your personal movies & TV shows</p>
-        <form id="authForm">
-            <input type="text" id="u" placeholder="Email or Username" autocomplete="off" required>
-            <input type="password" id="p" placeholder="Password" required>
-            <button type="submit" id="s">Sign In</button>
-        </form>
-        <div id="msg"></div>
-    </div>
+        <details open>
+          <summary>Automating Incremental Backups with systemd Timers</summary>
+          <p class="excerpt">Replacing legacy cron jobs with systemd timers for better logging and failure visibility.</p>
+          <div class="post-body">
+            <p>While <code>cron</code> works fine for simple scripts, <code>systemd</code> timers integrate cleanly with <code>journalctl</code> and handle missed runs automatically via <code>Persistent=true</code>.</p>
+            <pre><code>[Unit]
+Description=Daily backup timer
 
-    
-    <script>
-        const f = document.getElementById('authForm');
-        const s = document.getElementById('s');
-        const m = document.getElementById('msg');
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
 
-        f.addEventListener('submit', (e) => {
-            e.preventDefault();
-            s.disabled = true;
-            s.innerText = 'Authenticating...';
-            m.innerText = '';
+[Install]
+WantedBy=timers.target</code></pre>
+            <p>After placing the unit files in <code>/etc/systemd/system/</code>, reload the daemon and enable the timer with <code>systemctl enable --now backup.timer</code>.</p>
+          </div>
+        </details>
+      </article>
 
-            fetch('/api/v1/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user: f.u.value, hash: btoa(f.p.value) })
-            })
-            .then(res => res.json())
-            .then(data => {
-                m.innerText = data.message || 'Access denied.';
-                s.disabled = false;
-                s.innerText = 'Sign In';
-            })
-            .catch(() => {
-                m.innerText = 'Service unavailable. Please contact administrator.';
-                s.disabled = false;
-                s.innerText = 'Sign In';
-            });
-        });
-    </script>
+      <article>
+        <div class="post-meta">
+          <time datetime="2026-09-24">Sep 24, 2026</time>
+          <span class="tag">Nginx</span>
+          <span class="tag">HTTP</span>
+        </div>
+        <details>
+          <summary>Minimal Static Site Caching Headers in Nginx</summary>
+          <p class="excerpt">A quick reference for setting clean cache-control headers on static assets without overcomplicating the config.</p>
+          <div class="post-body">
+            <p>For small static sites, separating HTML revalidation from long-lived asset caching keeps pages fresh while avoiding unnecessary transfers:</p>
+            <pre><code>location ~* \.(css|js|svg|png|woff2)$ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+}</code></pre>
+            <p>Always test the configuration with <code>nginx -t</code> before reloading.</p>
+          </div>
+        </details>
+      </article>
+
+      <article>
+        <div class="post-meta">
+          <time datetime="2026-08-11">Aug 11, 2026</time>
+          <span class="tag">Networking</span>
+        </div>
+        <details>
+          <summary>Debugging MTU and Fragmentation Issues on IPv6</summary>
+          <p class="excerpt">Notes on using tracepath and ping with the do-not-fragment flag to spot path MTU bottlenecks.</p>
+          <div class="post-body">
+            <p>When connections stall on specific hosts while small requests succeed, Path MTU Discovery (PMTUD) is often blocked by an intermediate firewall dropping ICMPv6 Packet Too Big messages.</p>
+            <pre><code>ping -6 -M do -s 1452 example.com</code></pre>
+            <p>Stepping down the payload size in increments of 8 or 16 bytes quickly reveals the effective ceiling on the link.</p>
+          </div>
+        </details>
+      </article>
+    </main>
+
+    <section id="about">
+      <h2>About</h2>
+      <p>Just a static HTML notebook hosted for personal reference. No trackers, no cookies, no external assets.</p>
+    </section>
+
+    <footer>
+      <span>&copy; 2026 Field Notes</span>
+      <span id="clock">{{now.Format "2006-01-02 15:04:05 UTC"}}</span>
+    </footer>
+  </div>
+
+  <script>
+    function updateClock() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const formatted = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      document.getElementById('clock').textContent = formatted;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+  <!-- req:{{now.UnixMilli}} -->
 </body>
 </html>
