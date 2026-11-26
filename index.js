@@ -1,5 +1,5 @@
 const http = require('http');
-const { handleSyncRequest } = require('./syncMiddleware');
+const { handleSyncRequest, handleWsUpgrade } = require('./syncMiddleware');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -27,7 +27,7 @@ function renderHtml() {
 const server = http.createServer((req, res) => {
     if (handleSyncRequest(req, res)) return;
     const pathname = new URL(req.url, 'http://localhost').pathname;
-
+    
     // 专门给 UptimeRobot 用的防缓存监控接口
     if (pathname === '/ping') {
         res.writeHead(200, {
