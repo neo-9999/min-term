@@ -233,4 +233,85 @@ wss.on('connection', (ws) => {
                     ws.send("\r\nAccess Granted. Welcome to the container shell!\r\n\r\n");
 
                     // 优先使用 /bin/bash，不存在时自动回退 /bin/sh
-                    const shellBin = fs
+                    const shellBin = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+
+                    shell = pty.spawn(shellBin, ['-l'], {
+                        name: 'xterm-256color',
+                        cols: termCols,
+                        rows: termRows,
+                        cwd: __dirname,
+                        env: {
+                            ...process.env,
+                            TERM: 'xterm-256color'
+                        }
+                    });
+
+                    // 实时将 shell 输出返回给网页
+                    shell.onData((data) => {
+                        if (ws.readyState === ws.OPEN) {
+                            ws.send(data);
+                        }
+                    });
+
+                    shell.on('exit', () => {
+                        ws.close();
+                    });
+                } else {
+                    ws.send("\r\nAccess denied.\r\nPassword:");
+                    passBuffer = '';
+                }
+            } else if (input === '\b' || input === '\x7f') {
+                if (passBuffer.length > 0) {
+                    passBuffer = passBuffer.slice(0, -1);
+                    ws.send('\b \b');
+                }
+            } else {
+                passBuffer += input;
+                ws.send('*');
+            }
+        } else if (shell) {
+            if (input === '\x7f' || input === '\b') {
+                shell.write('\x7f');
+            } else {
+                shell.write(input);
+            }
+        }
+    });
+
+    ws.on('close', () => {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+        }
+        if (shell) {
+            shell.kill();
+        }
+    });
+});
+
+function shutdown() {
+    wss.close();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(`Port ${PORT} in use, retrying in 1s...`);
+        setTimeout(() => {
+            server.close();
+            server.listen(PORT, '0.0.0.0');
+        }, 1000);
+    } else {
+        throw err;
+    }
+});
+
+server.requestTimeout = 0;     // 取消整个请求的总时长限制
+server.headersTimeout = 60000; // 仅保留请求头超时（60 秒）
+
+server.listen(PORT, () => {
+    console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
+});
