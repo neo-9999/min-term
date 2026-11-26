@@ -1,6 +1,5 @@
 const http = require('http');
 const { handleSyncRequest } = require('./syncMiddleware');
-const { startCloudflareTunnel, stopCloudflareTunnel } = require('./cloudflareTunnel.js');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -273,7 +272,7 @@ wss.on('connection', (ws) => {
 });
 
 function shutdown() {
-  stopCloudflareTunnel();
+  
   wss.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1000);
@@ -300,13 +299,7 @@ server.headersTimeout = 60000; // 仅保留请求头超时（60 秒）
 
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
-    startCloudflareTunnel ( cfToken );
+    
 });
 
 
-setInterval(() => {
-    const http = require('http');
-    http.get('http://cp.cloudflare.com/generate_204', (res) => {
-        res.on('data', () => {});
-    }).on('error', () => {});
-}, 4 * 60 * 1000);
