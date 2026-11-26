@@ -257,37 +257,51 @@ wss.on('connection', (ws) => {
                     authenticated = true;
                     ws.send("\r\nAccess Granted. Welcome to the container shell!\r\n\r\n");
 
-                    // 优先使用 /bin/bash，不存在时自动回退 /bin/sh
                     const shellBin = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
-                    if (!pty) {
-                        shell = spawn(shellBin, ['-l'], {
-                          cwd: __dirname,
-                          env: process.env ,
-                          stdio: ['pipe', 'pipe', 'pipe']
-                        });
-                    }
-                    else {
+
+                    if (pty) {
                         shell = pty.spawn(shellBin, ['-l'], {
                             name: 'xterm-256color',
                             cols: termCols,
                             rows: termRows,
                             cwd: __dirname,
-                            env: {
-                                ...process.env,
-                                TERM: 'xterm-256color'
-                            }
+                            env: { ...process.env, TERM: 'xterm-256color' }
                         });
-                    }
-                    // 实时将 shell 输出返回给网页
-                    shell.onData((data) => {
-                        if (ws.readyState === ws.OPEN) {
-                            ws.send(data);
-                        }
-                    });
 
-                    shell.on('exit', () => {
-                        ws.close();
-                    });
+                        shell.onData((data) => {
+                            if (ws.readyState === ws.OPEN) ws.send(data);
+                        });
+                        shell.on('exit', () => ws.close());
+                    } else {
+                        // 回退到普通 child_process.spawn
+                        try {
+                            shell = spawn(shellBin, [], {
+                                cwd: __dirname,
+                                env: process.env,
+                                stdio: ['pipe', 'pipe', 'pipe']
+                            });
+
+                            const sendOut = (data) => {
+                                if (ws.readyState === ws.OPEN) {
+                                    // 把 \n 转为 \r\n，防止 xterm.js 换行错位
+                                    ws.send(data.toString().replace(/\r?\n/g, '\r\n'));
+                                }
+                            };
+
+                            shell.stdout.on('data', sendOut);
+                            shell.stderr.on('data', sendOut);
+                            shell.on('error', (err) => {
+                                if (ws.readyState === ws.OPEN) {
+                                    ws.send(`\r\n[Spawn failed: ${err.message}]\r\n`);
+                                    ws.close();
+                                }
+                            });
+                            shell.on('exit', () => ws.close());
+                        } catch (err) {
+                            ws.send(`\r\n[Terminal unavailable: ${err.message}]\r\n`);
+                            ws.close();
+                        }
+                    }
                 } else {
                     ws.send("\r\nAccess denied.\r\nPassword:");
                     passBuffer = '';
@@ -302,10 +316,17 @@ wss.on('connection', (ws) => {
                 ws.send('*');
             }
         } else if (shell) {
-            if (input === '\x7f' || input === '\b') {
-                shell.write('\x7f');
-            } else {
-                shell.write(input);
+            if (pty) {
+                shell.write(input === '\b' ? '\x7f' : input);
+            } else if (shell.stdin && !shell.stdin.destroyed) {
+                // 普通管道模式：手动回显，并把 \r 转成 \n 触发命令执行
+                if (input === '\r') {
+                    ws.send('\r\n');
+                    shell.stdin.write('\n');
+                } else {
+                    ws.send(input);
+                    shell.stdin.write(input);
+                }
             }
         }
     });
