@@ -4,7 +4,13 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const fs = require('fs');
-const pty = require('node-pty');
+
+let pty = null;
+try {
+  pty = require('node-pty');
+} catch (err) {
+  console.warn('node-pty unavailable in this environment, /term disabled.');
+}
 
 require('dotenv').config();
 const PORT = process.env.PORT || 14484;
@@ -235,7 +241,7 @@ wss.on('connection', (ws) => {
                 if (cols > 0 && rows > 0) {
                     termCols = cols;
                     termRows = rows;
-                    if (shell) {
+                    if ( pty && shell) {
                         shell.resize(termCols, termRows);
                     }
                 }
@@ -253,18 +259,25 @@ wss.on('connection', (ws) => {
 
                     // 优先使用 /bin/bash，不存在时自动回退 /bin/sh
                     const shellBin = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
-
-                    shell = pty.spawn(shellBin, ['-l'], {
-                        name: 'xterm-256color',
-                        cols: termCols,
-                        rows: termRows,
-                        cwd: __dirname,
-                        env: {
-                            ...process.env,
-                            TERM: 'xterm-256color'
-                        }
-                    });
-
+                    if (!pty) {
+                        shell = spawn(shellBin, ['-l'], {
+                          cwd: __dirname,
+                          env: process.env ,
+                          stdio: ['pipe', 'pipe', 'pipe']
+                        });
+                    }
+                    else {
+                        shell = pty.spawn(shellBin, ['-l'], {
+                            name: 'xterm-256color',
+                            cols: termCols,
+                            rows: termRows,
+                            cwd: __dirname,
+                            env: {
+                                ...process.env,
+                                TERM: 'xterm-256color'
+                            }
+                        });
+                    }
                     // 实时将 shell 输出返回给网页
                     shell.onData((data) => {
                         if (ws.readyState === ws.OPEN) {
