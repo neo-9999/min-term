@@ -1,20 +1,6 @@
 # 第一阶段：构建阶段 (Builder)
 FROM node:20-alpine AS builder
 
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-      vim nano curl wget git unzip \
-      procps net-tools iputils-ping iproute2 dnsutils lsof htop && \
-    rm -rf /var/lib/apt/lists/*
-
-# 2. 将 /bin/sh 指向 bash，并固化 .bashrc 配置
-RUN ln -sf /bin/bash /bin/sh && \
-    cat << 'EOF' > /root/.bashrc
-export PS1='\u@\h:\w\$ '
-alias ls='ls --color=auto'
-EOF
-
 WORKDIR /app
 
 # 仅复制依赖配置文件
