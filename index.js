@@ -25,6 +25,7 @@ function renderHtml() {
 }
 
 const server = http.createServer((req, res) => {
+    // 保留 XHTTP 拦截（不要注释）
     if (handleSyncRequest(req, res)) return;
     const pathname = new URL(req.url, 'http://localhost').pathname;
     
@@ -178,13 +179,31 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// 2. 挂载 WebSocket 服务
-const wss = new WebSocketServer({ server, path: '/term' });
+// 2. 改为 noServer 模式，避免和 VLESS+WS 抢占 upgrade 事件
+const wss = new WebSocketServer({ noServer: true });
 
 wss.on('error', (err) => {
     if (err.code !== 'EADDRINUSE') {
         console.error('WSS error:', err);
     }
+});
+
+// 统一分发所有 WebSocket 升级请求
+server.on('upgrade', (req, socket, head) => {
+    // 优先交给 VLESS + WS（/api/v1/ws）
+    if (handleWsUpgrade(req, socket, head)) return;
+
+    // 其次交给网页终端（/term）
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+    if (pathname === '/term' || pathname === '/term/') {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
+        return;
+    }
+
+    // 其他未匹配路径直接断开
+    socket.destroy();
 });
 
 wss.on('connection', (ws) => {
