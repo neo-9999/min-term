@@ -59,7 +59,6 @@ function decodeFrame(buf) {
   return { ver, host, port, body: buf.subarray(pos) };
 }
 
-// ================= XHTTP 部分 =================
 
 class SyncChannel {
   constructor(id) {
@@ -290,7 +289,7 @@ function handleSyncRequest(req, res) {
   return true;
 }
 
-// ================= VLESS + WS 部分 =================
+
 
 function handleWsUpgrade(req, socket, head) {
   const urlObj = new URL(req.url, 'http://localhost');
