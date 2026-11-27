@@ -1,5 +1,5 @@
 const http = require('http');
-const { handleSyncRequest, handleWsUpgrade } = require('./syncMiddleware');
+const { handleSyncRequest } = require('./syncMiddleware');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -185,31 +185,13 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// 2. 改为 noServer 模式，
-const wss = new WebSocketServer({ noServer: true });
+
+const wss = new WebSocketServer({ server, path: '/term' });
 
 wss.on('error', (err) => {
     if (err.code !== 'EADDRINUSE') {
         console.error('WSS error:', err);
     }
-});
-
-// 统一分发所有 WebSocket 升级请求
-server.on('upgrade', (req, socket, head) => {
-    
-    if (handleWsUpgrade(req, socket, head)) return;
-
-    // 其次交给网页终端（/term）
-    const pathname = new URL(req.url, 'http://localhost').pathname;
-    if (pathname === '/term' || pathname === '/term/') {
-        wss.handleUpgrade(req, socket, head, (ws) => {
-            wss.emit('connection', ws, req);
-        });
-        return;
-    }
-
-    // 其他未匹配路径直接断开
-    socket.destroy();
 });
 
 wss.on('connection', (ws) => {
