@@ -1,7 +1,7 @@
 #!/bin/sh
 #[ -f /bin/bash ] && { rm -f /bin/sh;ln -sf /bin/bash /bin/sh; }
-cat << 'EOF' > ~/.bashrc
-export PS1='\u@\h:\w\$ '
+cat << 'EOF' > ~/.bash_profile
+export PS1='\w\$ '
 alias ls='ls --color=auto'
 alias rm='rm -i'
 EOF
