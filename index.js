@@ -222,7 +222,17 @@ wss.on('connection', (ws) => {
     // 仅在无 pty（普通管道模式）下使用的状态
     let cmdBuffer = '';
     let currentCwd = __dirname;
+    const cmdHistory = [];
+    let historyIndex = 0;
 
+    function replaceLine(newCmd) {
+      if (cmdBuffer.length > 0) {
+          ws.send('\b \b'.repeat(cmdBuffer.length));
+      }
+      cmdBuffer = newCmd;
+      if (newCmd) ws.send(newCmd);
+    }
+  
     const heartbeatInterval = setInterval(() => {
         if (ws.readyState === ws.OPEN) {
             ws.ping();       // 照顾标准 WebSocket 协议
@@ -367,7 +377,7 @@ wss.on('connection', (ws) => {
                 if (input === '\r') {
                     ws.send('\r\n');
                     const trimmed = cmdBuffer.trim();
-
+                    
                     // 内置处理 clear 清屏
                     if (trimmed === 'clear') {
                         ws.send('\x1b[2J\x1b[H');
@@ -375,7 +385,12 @@ wss.on('connection', (ws) => {
                         shell.stdin.write('\n');
                         return;
                     }
-
+                    if (trimmed && cmdHistory[cmdHistory.length - 1] !== trimmed) {
+                        cmdHistory.push(trimmed);
+                        if (cmdHistory.length > 50) cmdHistory.shift(); // 最多保留 50 条
+                    }
+                    historyIndex = cmdHistory.length;
+                  
                     // 简单追踪 cd 目录变化，确保 Tab 补全路径准确
                     if (trimmed === 'cd') {
                         currentCwd = process.env.HOME || __dirname;
@@ -409,11 +424,27 @@ wss.on('connection', (ws) => {
                     // 降级：如果平台不支持进程组，尝试直接发给 shell
                         try { shell.kill('SIGINT'); } catch {}
                     }
-                } else if (!input.startsWith('\x1b')) {
+                 }else if (input === '\x1b[A') {
+                    // 向上键：上一条历史命令
+                    if (historyIndex > 0) {
+                      historyIndex--;
+                      replaceLine(cmdHistory[historyIndex]);
+                    }
+                 } else if (input === '\x1b[B') {
+                    // 向下键：下一条历史命令（到底清空）
+                     if (historyIndex < cmdHistory.length - 1) {
+                          historyIndex++;
+                          replaceLine(cmdHistory[historyIndex]);
+                      } else if (historyIndex === cmdHistory.length - 1) {
+                          historyIndex = cmdHistory.length;
+                          replaceLine('');
+                      }
+                  } 
+                  else if (!input.startsWith('\x1b')) {
                     // 普通字符（忽略方向键等 ANSI 转义序列，避免屏幕乱码）
                     cmdBuffer += input;
                     ws.send(input);
-                }
+                  }
             }
         }
     });
