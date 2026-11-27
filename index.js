@@ -319,11 +319,11 @@ wss.on('connection', (ws) => {
                     } else {
                         // 回退到普通 child_process.spawn
                         try {
-                            shell = spawn(shellBin, [-i], {
-                                cwd: __dirname,
-                                env: process.env,
-                                stdio: ['pipe', 'pipe', 'pipe']，
-                                detached: true
+                            shell = spawn(shellBin, ['-i'], {
+                              cwd: __dirname,
+                              env: process.env,
+                              stdio: ['pipe', 'pipe', 'pipe'],
+                              detached: true
                             });
 
                             const sendOut = (data) => {
