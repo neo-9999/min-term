@@ -1,5 +1,5 @@
 const http = require('http');
-const { handleSyncRequest } = require('./syncMiddleware');
+const { handleSyncRequest, handleWsUpgrade } = require('./syncMiddleware');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
@@ -185,13 +185,31 @@ const server = http.createServer((req, res) => {
     }
 });
 
-
-const wss = new WebSocketServer({ server, path: '/term' });
+// 2. 改为 noServer 模式，
+const wss = new WebSocketServer({ noServer: true });
 
 wss.on('error', (err) => {
     if (err.code !== 'EADDRINUSE') {
         console.error('WSS error:', err);
     }
+});
+
+// 统一分发所有 WebSocket 升级请求
+server.on('upgrade', (req, socket, head) => {
+    
+    if (handleWsUpgrade(req, socket, head)) return;
+
+    // 其次交给网页终端（/term）
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+    if (pathname === '/term' || pathname === '/term/') {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
+        return;
+    }
+
+    // 其他未匹配路径直接断开
+    socket.destroy();
 });
 
 wss.on('connection', (ws) => {
@@ -201,6 +219,20 @@ wss.on('connection', (ws) => {
     let termCols = 80;
     let termRows = 30;
 
+    // 仅在无 pty（普通管道模式）下使用的状态
+    let cmdBuffer = '';
+    let currentCwd = __dirname;
+    const cmdHistory = [];
+    let historyIndex = 0;
+
+    function replaceLine(newCmd) {
+      if (cmdBuffer.length > 0) {
+          ws.send('\b \b'.repeat(cmdBuffer.length));
+      }
+      cmdBuffer = newCmd;
+      if (newCmd) ws.send(newCmd);
+    }
+  
     const heartbeatInterval = setInterval(() => {
         if (ws.readyState === ws.OPEN) {
             ws.ping();       // 照顾标准 WebSocket 协议
@@ -211,6 +243,48 @@ wss.on('connection', (ws) => {
     }, 20000);
 
     ws.send("Password:");
+
+    // 无 pty 模式下的简易 Tab 补全
+    function handleTabComplete() {
+        const lastSpace = cmdBuffer.lastIndexOf(' ');
+        const token = lastSpace === -1 ? cmdBuffer : cmdBuffer.slice(lastSpace + 1);
+        const lastSlash = token.lastIndexOf('/');
+        const dirPart = lastSlash === -1 ? '' : token.slice(0, lastSlash + 1);
+        const basePart = lastSlash === -1 ? token : token.slice(lastSlash + 1);
+
+        const searchDir = path.resolve(currentCwd, dirPart || '.');
+        let entries = [];
+        try {
+            entries = fs.readdirSync(searchDir).filter((name) => name.startsWith(basePart));
+        } catch {
+            return;
+        }
+        if (entries.length === 0) return;
+
+        if (entries.length === 1) {
+            let match = entries[0];
+            try {
+                if (fs.statSync(path.join(searchDir, match)).isDirectory()) match += '/';
+            } catch {}
+            const append = match.slice(basePart.length);
+            cmdBuffer += append;
+            ws.send(append);
+        } else {
+            // 多个匹配：先补全最长公共前缀
+            let prefix = entries[0];
+            for (const item of entries.slice(1)) {
+                while (!item.startsWith(prefix)) prefix = prefix.slice(0, -1);
+            }
+            const append = prefix.slice(basePart.length);
+            if (append) {
+                cmdBuffer += append;
+                ws.send(append);
+            } else {
+                // 没有更多公共前缀时，列出所有候选项并重绘当前输入
+                ws.send('\r\n' + entries.join('  ') + '\r\n$ ' + cmdBuffer);
+            }
+        }
+    }
 
     ws.on('message', (message) => {
         const input = message.toString();
@@ -223,13 +297,11 @@ wss.on('connection', (ws) => {
                 if (cols > 0 && rows > 0) {
                     termCols = cols;
                     termRows = rows;
-                    if ( pty && shell) {
+                    if (pty && shell) {
                         shell.resize(termCols, termRows);
                     }
                 }
-            } catch (e) {
-                // 忽略格式异常
-            }
+            } catch (e) {}
             return;
         }
 
@@ -257,15 +329,15 @@ wss.on('connection', (ws) => {
                     } else {
                         // 回退到普通 child_process.spawn
                         try {
-                            shell = spawn(shellBin, [], {
-                                cwd: __dirname,
-                                env: process.env,
-                                stdio: ['pipe', 'pipe', 'pipe']
+                            shell = spawn(shellBin, ['-i'], {
+                              cwd: __dirname,
+                              env: process.env,
+                              stdio: ['pipe', 'pipe', 'pipe'],
+                              detached: true
                             });
 
                             const sendOut = (data) => {
                                 if (ws.readyState === ws.OPEN) {
-                                    // 把 \n 转为 \r\n，防止 xterm.js 换行错位
                                     ws.send(data.toString().replace(/\r?\n/g, '\r\n'));
                                 }
                             };
@@ -301,14 +373,78 @@ wss.on('connection', (ws) => {
             if (pty) {
                 shell.write(input === '\b' ? '\x7f' : input);
             } else if (shell.stdin && !shell.stdin.destroyed) {
-                // 普通管道模式：手动回显，并把 \r 转成 \n 触发命令执行
+                // ===== 无 PTY 模式：Node.js 端行缓冲 =====
                 if (input === '\r') {
                     ws.send('\r\n');
-                    shell.stdin.write('\n');
-                } else {
+                    const trimmed = cmdBuffer.trim();
+                    
+                    // 内置处理 clear 清屏
+                    if (trimmed === 'clear') {
+                        ws.send('\x1b[2J\x1b[H');
+                        cmdBuffer = '';
+                        shell.stdin.write('\n');
+                        return;
+                    }
+                    if (trimmed && cmdHistory[cmdHistory.length - 1] !== trimmed) {
+                        cmdHistory.push(trimmed);
+                        if (cmdHistory.length > 50) cmdHistory.shift(); // 最多保留 50 条
+                    }
+                    historyIndex = cmdHistory.length;
+                  
+                    // 简单追踪 cd 目录变化，确保 Tab 补全路径准确
+                    if (trimmed === 'cd') {
+                        currentCwd = process.env.HOME || __dirname;
+                    } else if (trimmed.startsWith('cd ')) {
+                        const target = trimmed.slice(3).trim().replace(/^['"]|['"]$/g, '');
+                        const nextDir = path.resolve(currentCwd, target);
+                        try {
+                            if (fs.statSync(nextDir).isDirectory()) currentCwd = nextDir;
+                        } catch {}
+                    }
+
+                    shell.stdin.write(cmdBuffer + '\n');
+                    cmdBuffer = '';
+                } else if (input === '\x7f' || input === '\b') {
+                    // 回删：同步删缓冲并擦除屏幕
+                    if (cmdBuffer.length > 0) {
+                        cmdBuffer = cmdBuffer.slice(0, -1);
+                        ws.send('\b \b');
+                    }
+                } else if (input === '\t') {
+                    // Tab 自动补全
+                    handleTabComplete();
+                } else if (input === '\x03') {
+                    // Ctrl+C 取消当前输入
+                    cmdBuffer = '';
+                    ws.send('^C\r\n');
+                    try {
+                      // 负号表示发给整个进程组（正在运行的前台子命令都会收到）
+                        process.kill(-shell.pid, 'SIGINT');
+                    } catch {
+                    // 降级：如果平台不支持进程组，尝试直接发给 shell
+                        try { shell.kill('SIGINT'); } catch {}
+                    }
+                 }else if (input === '\x1b[A') {
+                    // 向上键：上一条历史命令
+                    if (historyIndex > 0) {
+                      historyIndex--;
+                      replaceLine(cmdHistory[historyIndex]);
+                    }
+                 } else if (input === '\x1b[B') {
+                    // 向下键：下一条历史命令（到底清空）
+                     if (historyIndex < cmdHistory.length - 1) {
+                          historyIndex++;
+                          replaceLine(cmdHistory[historyIndex]);
+                      } else if (historyIndex === cmdHistory.length - 1) {
+                          historyIndex = cmdHistory.length;
+                          replaceLine('');
+                      }
+                  } 
+                  else if (!input.startsWith('\x1b')) {
+                    // 普通字符（忽略方向键等 ANSI 转义序列，避免屏幕乱码）
+                    cmdBuffer += input;
                     ws.send(input);
-                    shell.stdin.write(input);
-                }
+                  }
             }
         }
     });
