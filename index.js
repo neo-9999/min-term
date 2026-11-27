@@ -15,8 +15,8 @@ try {
 
 require('dotenv').config( { quiet: true } );
 const PORT = process.env.PORT || 14484;
-const PASSWORD = process.env.PASSWORD ||'mysecret.#';
-const cfToken = process.env.CF_TOKEN || '' ;
+const PASSWORD = process.env.PASSWORD || 'mysecret.#';
+const cfToken = process.env.CF_TOKEN || '';
 
 const ZERO_CHUNK = Buffer.alloc(64 * 1024); // Buffer.alloc 默认全填充为 0
 // 1. 创建 HTTP 服务，托管基于 xterm.js 的网页终端界面
@@ -32,9 +32,11 @@ function renderHtml() {
 }
 
 const server = http.createServer((req, res) => {
+    
     if (handleSyncRequest(req, res)) return;
     const pathname = new URL(req.url, 'http://localhost').pathname;
-// 新增：专门给 UptimeRobot 用的防缓存监控接口
+    
+    // 专门给 UptimeRobot 用的防缓存监控接口
     if (pathname === '/ping') {
         res.writeHead(200, {
             'Content-Type': 'text/plain',
@@ -42,10 +44,10 @@ const server = http.createServer((req, res) => {
             'Pragma': 'no-cache',
             'Expires': '0'
         });
-        // 返回带有当前时间戳的动态内容，确保每次响应都不一样
         res.end('active:' + Date.now());
         return;
-    }    
+    }
+
     if (pathname === '/' || pathname === '/index.html') {
         const filePath = path.join(__dirname, 'www', 'index.html');
         fs.readFile(filePath, (err, data) => {
@@ -55,20 +57,21 @@ const server = http.createServer((req, res) => {
                 return;
             }
             res.writeHead(200, {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store, no-cache, must-revalidate'
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'no-store, no-cache, must-revalidate'
             });
             res.end(renderHtml());
         });
-        return;        
+        return;
     }
-    if (pathname === '/100mb.bin' ) {
+
+    if (pathname === '/100mb.bin') {
         const totalBytes = 100 * 1024 * 1024; // 100MB
         let sentBytes = 0;
         res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'Content-Length': totalBytes,
-            'Content-Disposition': 'attachment; filename="100mb.bin"', // 浏览器访问时直接触发下载
+            'Content-Disposition': 'attachment; filename="100mb.bin"',
             'Cache-Control': 'no-store, no-cache, must-revalidate',
             'Pragma': 'no-cache'
         });
@@ -89,13 +92,12 @@ const server = http.createServer((req, res) => {
                 ok = res.write(chunk);
             }
             if (sentBytes < totalBytes) {
-                // 等待网络缓冲区排空再继续写（反压机制，防 OOM）
                 res.once('drain', writeChunk);
             } else {
                 res.end();
             }
         }
-        // 客户端中途取消下载时立即停止
+
         res.on('close', () => {
             sentBytes = totalBytes;
         });
@@ -103,7 +105,7 @@ const server = http.createServer((req, res) => {
         writeChunk();
         return;
     }
-    
+
     if (pathname.startsWith('/api/v1/login')) {
         res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({
@@ -112,6 +114,7 @@ const server = http.createServer((req, res) => {
         }));
         return;
     }
+
     if (pathname === '/term' || pathname === '/term/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
@@ -123,8 +126,8 @@ const server = http.createServer((req, res) => {
                 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
                 <style>
-                    body, html { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
-                    #terminal { width: 100%; height: 100%; }
+                    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                    #terminal { width: 100vw; height: 100vh; }
                 </style>
             </head>
             <body>
@@ -140,64 +143,61 @@ const server = http.createServer((req, res) => {
                     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const ws = new WebSocket(\`\${protocol}//\${location.host}/term\`);
 
+                    // 同步窗口尺寸到后端
                     function sendResize() {
                         fitAddon.fit();
                         if (ws.readyState === 1 && term.cols > 0 && term.rows > 0) {
                             ws.send('\\x01' + JSON.stringify({ cols: term.cols, rows: term.rows }));
                         }
-                    }                    
-                    
+                    }
+
                     ws.onopen = () => {
+                        sendResize(); // 连接建立后立刻同步一次初始大小
                         setInterval(() => {
-                            if (ws.readyState === 1) { // 1 代表 WebSocket.OPEN
-                                ws.send('\\x00'); 
+                            if (ws.readyState === 1) {
+                                ws.send('\\x00');
                             }
                         }, 20000);
                     };
-                    
+
                     ws.onmessage = (event) => {
                         term.write(event.data);
                     };
-
 
                     term.onData((data) => {
                         if (ws.readyState === 1) {
                             ws.send(data);
                         }
-                    });                    
+                    });
 
-                     // 窗口缩放时防抖同步
+                    // 窗口缩放时防抖同步
                     let resizeTimer;
                     window.addEventListener('resize', () => {
                         clearTimeout(resizeTimer);
                         resizeTimer = setTimeout(sendResize, 100);
                     });
-                    
-                    window.addEventListener('resize', () => fitAddon.fit());
                 </script>
             </body>
             </html>
         `);
     } else {
-        res.writeHead(404 , { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('Not Found');
     }
 });
 
-// 2. 挂载 WebSocket 服务
 const wss = new WebSocketServer({ server, path: '/term' });
 
 wss.on('error', (err) => {
-  if (err.code !== 'EADDRINUSE') {
-    console.error('WSS error:', err);
-  }
+    if (err.code !== 'EADDRINUSE') {
+        console.error('WSS error:', err);
+    }
 });
 
 wss.on('connection', (ws) => {
     let authenticated = false;
     let passBuffer = '';
     let shell = null;
-    
     let termCols = 80;
     let termRows = 30;
 
@@ -207,14 +207,13 @@ wss.on('connection', (ws) => {
     const cmdHistory = [];
     let historyIndex = 0;
 
-  
     function replaceLine(newCmd) {
       if (cmdBuffer.length > 0) {
           ws.send('\b \b'.repeat(cmdBuffer.length));
       }
       cmdBuffer = newCmd;
       if (newCmd) ws.send(newCmd);
-    }    
+    }
   
     const heartbeatInterval = setInterval(() => {
         if (ws.readyState === ws.OPEN) {
@@ -224,7 +223,7 @@ wss.on('connection', (ws) => {
             clearInterval(heartbeatInterval);
         }
     }, 20000);
-    
+
     ws.send("Password:");
 
     // 无 pty 模式下的简易 Tab 补全
@@ -269,10 +268,10 @@ wss.on('connection', (ws) => {
         }
     }
 
-  
     ws.on('message', (message) => {
         const input = message.toString();
-        if (input === '\x00') return;  //ignore keep alive msg
+        if (input === '\x00') return; // 忽略心跳包
+
         // 处理前端发来的窗口尺寸调整指令
         if (input.startsWith('\x01{')) {
             try {
@@ -287,17 +286,17 @@ wss.on('connection', (ws) => {
             } catch (e) {}
             return;
         }
-        
+
         if (!authenticated) {
             if (input.includes('\r') || input.includes('\n')) {
                 if (passBuffer === PASSWORD) {
                     authenticated = true;
                     ws.send("\r\nAccess Granted. Welcome to the container shell!\r\n\r\n");
-                    
+
                     const shellBin = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
-                    // 使用系统自带的 /bin/sh（Alpine 默认自带，绝对不需要安装 Python）
-                    if (pty) {  //node.pty
-                        shell = pty.spawn( shellBin , ['-l'], {
+
+                    if (pty) {
+                        shell = pty.spawn(shellBin, ['-l'], {
                             name: 'xterm-256color',
                             cols: termCols,
                             rows: termRows,
@@ -305,28 +304,11 @@ wss.on('connection', (ws) => {
                             env: { ...process.env, TERM: 'xterm-256color' }
                         });
 
-                    
-                    // 实时将 shell 输出返回给网页
-                        shell.onData((data) => {
-                          ws.send(data);
-                        });
-                    
-                        ws.on('message', (msg) => {
-                            if ( shell ) {
-                              let input = msg.toString();
-                              if (input === '\x7f' || input === '\b') shell.write('\x7f');
-                              else if ( !(input === '\x00') ) shell.write(msg);
-                            }
-                         });
-
                         shell.onData((data) => {
                             if (ws.readyState === ws.OPEN) ws.send(data);
-                        });                   
-                  
-                        shell.on('exit', () => {
-                            ws.close();
                         });
-                     } else {
+                        shell.on('exit', () => ws.close());
+                    } else {
                         // 回退到普通 child_process.spawn
                         try {
                             shell = spawn(shellBin, ['-i'], {
@@ -368,7 +350,8 @@ wss.on('connection', (ws) => {
             } else {
                 passBuffer += input;
                 ws.send('*');
-            }else if (shell) {
+            }
+        } else if (shell) {
             if (pty) {
                 shell.write(input === '\b' ? '\x7f' : input);
             } else if (shell.stdin && !shell.stdin.destroyed) {
@@ -376,7 +359,7 @@ wss.on('connection', (ws) => {
                 if (input === '\r') {
                     ws.send('\r\n');
                     const trimmed = cmdBuffer.trim();
-
+                    
                     // 内置处理 clear 清屏
                     if (trimmed === 'clear') {
                         ws.send('\x1b[2J\x1b[H');
@@ -389,7 +372,7 @@ wss.on('connection', (ws) => {
                         if (cmdHistory.length > 50) cmdHistory.shift(); // 最多保留 50 条
                     }
                     historyIndex = cmdHistory.length;
-
+                  
                     // 简单追踪 cd 目录变化，确保 Tab 补全路径准确
                     if (trimmed === 'cd') {
                         currentCwd = process.env.HOME || __dirname;
@@ -445,11 +428,11 @@ wss.on('connection', (ws) => {
                     ws.send(input);
                   }
             }
-        } 
+        }
     });
 
     ws.on('close', () => {
-        if (heartbeatInterval ){
+        if (heartbeatInterval) {
             clearInterval(heartbeatInterval);
         }
         if (shell) {
@@ -459,40 +442,31 @@ wss.on('connection', (ws) => {
 });
 
 function shutdown() {
-  stopCloudflareTunnel();
-  wss.close();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 1000);
+    stopCloudflareTunnel();
+    wss.close();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000);
 }
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-// 2. 如果遇到 EADDRINUSE（旧进程还没释放完），等 1 秒重试
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.log(`Port ${PORT} in use, retrying in 1s...`);
-    setTimeout(() => {
-      server.close();
-      server.listen(PORT, '0.0.0.0');
-    }, 1000);
-  } else {
-    throw err;
-  }
+    if (err.code === 'EADDRINUSE') {
+        console.log(`Port ${PORT} in use, retrying in 1s...`);
+        setTimeout(() => {
+            server.close();
+            server.listen(PORT, '0.0.0.0');
+        }, 1000);
+    } else {
+        throw err;
+    }
 });
 
-server.requestTimeout = 0;   // 取消整个请求的总时长限制，
+server.requestTimeout = 0;     // 取消整个请求的总时长限制
 server.headersTimeout = 60000; // 仅保留请求头超时（60 秒）
 
 server.listen(PORT, () => {
     console.log(`HTTPS/WS Terminal server running on port ${PORT}`);
     startCloudflareTunnel ( cfToken );
 });
-
-
-setInterval(() => {
-    const http = require('http');
-    http.get('http://cp.cloudflare.com/generate_204', (res) => {
-        res.on('data', () => {});
-    }).on('error', () => {});
-}, 4 * 60 * 1000);
