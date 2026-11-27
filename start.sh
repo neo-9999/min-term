@@ -23,4 +23,39 @@ if ! command -v htop >/dev/null 2>&1; then
     echo "Not running as root (uid=$(id -u)); no root privileges."
   fi 
 fi
+
+BUSYBOX_SRC="$HOME/bin/busybox"
+LOCAL_BIN="$HOME/local/bin"
+
+# 仅在 ~/local/bin 目录不存在且源文件存在时，执行初始化操作
+if [ ! -d "$LOCAL_BIN" ] && [ -f "$BUSYBOX_SRC" ]; then
+  mkdir -p "$LOCAL_BIN"
+  cp "$BUSYBOX_SRC" "$LOCAL_BIN/busybox"
+  chmod +x "$LOCAL_BIN/busybox"
+
+  # 先检测当前环境能否执行 busybox（防止在 WASI 沙箱里报错）
+  if "$LOCAL_BIN/busybox" --list >/dev/null 2>&1; then
+    "$LOCAL_BIN/busybox" --install -s "$LOCAL_BIN" 2>/dev/null || \
+    for cmd in $("$LOCAL_BIN/busybox" --list); do
+      ln -sf "$LOCAL_BIN/busybox" "$LOCAL_BIN/$cmd"
+    done
+  else
+    echo "[Warning] busybox is not executable in this environment, skipping symlinks."
+  fi
+
+  # 写入 ~/.bashprofile（防重复）
+  touch "$HOME/.bash_profile"
+  if ! grep -Fq 'export PATH="$PATH:$HOME/local/bin"' "$HOME/.bash_profile"; then
+    echo 'export PATH="$PATH:$HOME/local/bin"' >> "$HOME/.bash_profile"
+  fi
+fi
+
+# 2. 只要目录存在，就确保当前启动进程（以及后续的 node 和 /term）继承 PATH
+if [ -d "$LOCAL_BIN" ]; then
+  case ":$PATH:" in
+    *":$LOCAL_BIN:"*) ;;
+    *) export PATH="$PATH:$LOCAL_BIN" ;;
+  esac
+fi
+
 exec node index.js
