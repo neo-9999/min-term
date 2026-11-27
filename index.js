@@ -5,9 +5,15 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const fs = require('fs');
-const pty = require('node-pty');
 
-require('dotenv').config();
+let pty = null;
+try {
+  pty = require('node-pty');
+} catch (err) {
+  console.log('node-pty unavailable in this environment, /term disabled.');
+}
+
+require('dotenv').config( { quiet: true } );
 const PORT = process.env.PORT || 14484;
 const PASSWORD = process.env.PASSWORD ||'mysecret.#';
 const cfToken = process.env.CF_TOKEN || '' ;
@@ -133,6 +139,13 @@ const server = http.createServer((req, res) => {
                     // 自动适配 HTTPS 对应的 wss:// 协议
                     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const ws = new WebSocket(\`\${protocol}//\${location.host}/term\`);
+
+                    function sendResize() {
+                        fitAddon.fit();
+                        if (ws.readyState === 1 && term.cols > 0 && term.rows > 0) {
+                            ws.send('\\x01' + JSON.stringify({ cols: term.cols, rows: term.rows }));
+                        }
+                    }                    
                     
                     ws.onopen = () => {
                         setInterval(() => {
@@ -146,29 +159,19 @@ const server = http.createServer((req, res) => {
                         term.write(event.data);
                     };
 
-//                    term.onKey(({ key, domEvent }) => {
-//                        let ev = domEvent;
-//                        let printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
-//                        if (ev.keyCode === 13) {
-//                            ws.send('\\r');
-//                        } else if (ev.keyCode === 8) {
-//                            ws.send('\\b');
-//                        } else if (printable) {
-//                            ws.send(key);
-//                        }
-//                    });
+
                     term.onData((data) => {
-                          ws.send(data);
+                        if (ws.readyState === 1) {
+                            ws.send(data);
+                        }
                     });                    
-//                    document.getElementById('terminal').addEventListener('contextmenu', async (e) => {
-//                          e.preventDefault(); // 阻止浏览器默认的右键菜单
-//                          try {
-//                                const text = await navigator.clipboard.readText();
-//                                ws.send(text);
-//                          } catch (err) {
-//                                // 忽略剪贴板读取被拒绝的情况
-//                          }
-//                    });
+
+                     // 窗口缩放时防抖同步
+                    let resizeTimer;
+                    window.addEventListener('resize', () => {
+                        clearTimeout(resizeTimer);
+                        resizeTimer = setTimeout(sendResize, 100);
+                    });
                     
                     window.addEventListener('resize', () => fitAddon.fit());
                 </script>
@@ -193,9 +196,26 @@ wss.on('error', (err) => {
 wss.on('connection', (ws) => {
     let authenticated = false;
     let passBuffer = '';
-    let cmdBuffer = '';
     let shell = null;
     
+    let termCols = 80;
+    let termRows = 30;
+
+    // 仅在无 pty（普通管道模式）下使用的状态
+    let cmdBuffer = '';
+    let currentCwd = __dirname;
+    const cmdHistory = [];
+    let historyIndex = 0;
+
+  
+    function replaceLine(newCmd) {
+      if (cmdBuffer.length > 0) {
+          ws.send('\b \b'.repeat(cmdBuffer.length));
+      }
+      cmdBuffer = newCmd;
+      if (newCmd) ws.send(newCmd);
+    }    
+  
     const heartbeatInterval = setInterval(() => {
         if (ws.readyState === ws.OPEN) {
             ws.ping();       // 照顾标准 WebSocket 协议
@@ -207,9 +227,66 @@ wss.on('connection', (ws) => {
     
     ws.send("Password:");
 
+    // 无 pty 模式下的简易 Tab 补全
+    function handleTabComplete() {
+        const lastSpace = cmdBuffer.lastIndexOf(' ');
+        const token = lastSpace === -1 ? cmdBuffer : cmdBuffer.slice(lastSpace + 1);
+        const lastSlash = token.lastIndexOf('/');
+        const dirPart = lastSlash === -1 ? '' : token.slice(0, lastSlash + 1);
+        const basePart = lastSlash === -1 ? token : token.slice(lastSlash + 1);
+
+        const searchDir = path.resolve(currentCwd, dirPart || '.');
+        let entries = [];
+        try {
+            entries = fs.readdirSync(searchDir).filter((name) => name.startsWith(basePart));
+        } catch {
+            return;
+        }
+        if (entries.length === 0) return;
+
+        if (entries.length === 1) {
+            let match = entries[0];
+            try {
+                if (fs.statSync(path.join(searchDir, match)).isDirectory()) match += '/';
+            } catch {}
+            const append = match.slice(basePart.length);
+            cmdBuffer += append;
+            ws.send(append);
+        } else {
+            // 多个匹配：先补全最长公共前缀
+            let prefix = entries[0];
+            for (const item of entries.slice(1)) {
+                while (!item.startsWith(prefix)) prefix = prefix.slice(0, -1);
+            }
+            const append = prefix.slice(basePart.length);
+            if (append) {
+                cmdBuffer += append;
+                ws.send(append);
+            } else {
+                // 没有更多公共前缀时，列出所有候选项并重绘当前输入
+                ws.send('\r\n' + entries.join('  ') + '\r\n$ ' + cmdBuffer);
+            }
+        }
+    }
+
+  
     ws.on('message', (message) => {
         const input = message.toString();
         if (input === '\x00') return;  //ignore keep alive msg
+        // 处理前端发来的窗口尺寸调整指令
+        if (input.startsWith('\x01{')) {
+            try {
+                const { cols, rows } = JSON.parse(input.slice(1));
+                if (cols > 0 && rows > 0) {
+                    termCols = cols;
+                    termRows = rows;
+                    if (pty && shell) {
+                        shell.resize(termCols, termRows);
+                    }
+                }
+            } catch (e) {}
+            return;
+        }
         
         if (!authenticated) {
             if (input.includes('\r') || input.includes('\n')) {
@@ -217,35 +294,68 @@ wss.on('connection', (ws) => {
                     authenticated = true;
                     ws.send("\r\nAccess Granted. Welcome to the container shell!\r\n\r\n");
                     
-                  
+                    const shellBin = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
                     // 使用系统自带的 /bin/sh（Alpine 默认自带，绝对不需要安装 Python）
-                  
-                    shell = pty.spawn('/bin/sh', ['-l'], {
-                        name: 'xterm-color',
-                        cols: 80,
-                        rows: 30,
-                        cwd: __dirname ,
-                        env: process.env
-                    });
+                    if (pty) {  //node.pty
+                        shell = pty.spawn( shellBin , ['-l'], {
+                            name: 'xterm-256color',
+                            cols: termCols,
+                            rows: termRows,
+                            cwd: __dirname,
+                            env: { ...process.env, TERM: 'xterm-256color' }
+                        });
 
                     
                     // 实时将 shell 输出返回给网页
-                    shell.onData((data) => {
-                        ws.send(data);
-                    });
+                        shell.onData((data) => {
+                          ws.send(data);
+                        });
                     
-                    ws.on('message', (msg) => {
-                        if ( shell ) {
-                          let input = msg.toString();
-                          if (input === '\x7f' || input === '\b') shell.write('\x7f');
-                          else if ( !(input === '\x00') ) shell.write(msg);
+                        ws.on('message', (msg) => {
+                            if ( shell ) {
+                              let input = msg.toString();
+                              if (input === '\x7f' || input === '\b') shell.write('\x7f');
+                              else if ( !(input === '\x00') ) shell.write(msg);
+                            }
+                         });
+
+                        shell.onData((data) => {
+                            if (ws.readyState === ws.OPEN) ws.send(data);
+                        });                   
+                  
+                        shell.on('exit', () => {
+                            ws.close();
+                        });
+                     } else {
+                        // 回退到普通 child_process.spawn
+                        try {
+                            shell = spawn(shellBin, ['-i'], {
+                              cwd: __dirname,
+                              env: process.env,
+                              stdio: ['pipe', 'pipe', 'pipe'],
+                              detached: true
+                            });
+
+                            const sendOut = (data) => {
+                                if (ws.readyState === ws.OPEN) {
+                                    ws.send(data.toString().replace(/\r?\n/g, '\r\n'));
+                                }
+                            };
+
+                            shell.stdout.on('data', sendOut);
+                            shell.stderr.on('data', sendOut);
+                            shell.on('error', (err) => {
+                                if (ws.readyState === ws.OPEN) {
+                                    ws.send(`\r\n[Spawn failed: ${err.message}]\r\n`);
+                                    ws.close();
+                                }
+                            });
+                            shell.on('exit', () => ws.close());
+                        } catch (err) {
+                            ws.send(`\r\n[Terminal unavailable: ${err.message}]\r\n`);
+                            ws.close();
                         }
-                     });
-
-
-                    shell.on('exit', () => {
-                        ws.close();
-                    });
+                    }
                 } else {
                     ws.send("\r\nAccess denied.\r\nPassword:");
                     passBuffer = '';
@@ -258,6 +368,82 @@ wss.on('connection', (ws) => {
             } else {
                 passBuffer += input;
                 ws.send('*');
+            }else if (shell) {
+            if (pty) {
+                shell.write(input === '\b' ? '\x7f' : input);
+            } else if (shell.stdin && !shell.stdin.destroyed) {
+                // ===== 无 PTY 模式：Node.js 端行缓冲 =====
+                if (input === '\r') {
+                    ws.send('\r\n');
+                    const trimmed = cmdBuffer.trim();
+
+                    // 内置处理 clear 清屏
+                    if (trimmed === 'clear') {
+                        ws.send('\x1b[2J\x1b[H');
+                        cmdBuffer = '';
+                        shell.stdin.write('\n');
+                        return;
+                    }
+                    if (trimmed && cmdHistory[cmdHistory.length - 1] !== trimmed) {
+                        cmdHistory.push(trimmed);
+                        if (cmdHistory.length > 50) cmdHistory.shift(); // 最多保留 50 条
+                    }
+                    historyIndex = cmdHistory.length;
+
+                    // 简单追踪 cd 目录变化，确保 Tab 补全路径准确
+                    if (trimmed === 'cd') {
+                        currentCwd = process.env.HOME || __dirname;
+                    } else if (trimmed.startsWith('cd ')) {
+                        const target = trimmed.slice(3).trim().replace(/^['"]|['"]$/g, '');
+                        const nextDir = path.resolve(currentCwd, target);
+                        try {
+                            if (fs.statSync(nextDir).isDirectory()) currentCwd = nextDir;
+                        } catch {}
+                    }
+
+                    shell.stdin.write(cmdBuffer + '\n');
+                    cmdBuffer = '';
+                } else if (input === '\x7f' || input === '\b') {
+                    // 回删：同步删缓冲并擦除屏幕
+                    if (cmdBuffer.length > 0) {
+                        cmdBuffer = cmdBuffer.slice(0, -1);
+                        ws.send('\b \b');
+                    }
+                } else if (input === '\t') {
+                    // Tab 自动补全
+                    handleTabComplete();
+                } else if (input === '\x03') {
+                    // Ctrl+C 取消当前输入
+                    cmdBuffer = '';
+                    ws.send('^C\r\n');
+                    try {
+                      // 负号表示发给整个进程组（正在运行的前台子命令都会收到）
+                        process.kill(-shell.pid, 'SIGINT');
+                    } catch {
+                    // 降级：如果平台不支持进程组，尝试直接发给 shell
+                        try { shell.kill('SIGINT'); } catch {}
+                    }
+                 }else if (input === '\x1b[A') {
+                    // 向上键：上一条历史命令
+                    if (historyIndex > 0) {
+                      historyIndex--;
+                      replaceLine(cmdHistory[historyIndex]);
+                    }
+                 } else if (input === '\x1b[B') {
+                    // 向下键：下一条历史命令（到底清空）
+                     if (historyIndex < cmdHistory.length - 1) {
+                          historyIndex++;
+                          replaceLine(cmdHistory[historyIndex]);
+                      } else if (historyIndex === cmdHistory.length - 1) {
+                          historyIndex = cmdHistory.length;
+                          replaceLine('');
+                      }
+                  } 
+                  else if (!input.startsWith('\x1b')) {
+                    // 普通字符（忽略方向键等 ANSI 转义序列，避免屏幕乱码）
+                    cmdBuffer += input;
+                    ws.send(input);
+                  }
             }
         } 
     });
