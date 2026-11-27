@@ -9,10 +9,10 @@ let pty = null;
 try {
   pty = require('node-pty');
 } catch (err) {
-  console.warn('node-pty unavailable in this environment, /term disabled.');
+  console.log('node-pty unavailable in this environment, /term disabled.');
 }
 
-require('dotenv').config();
+require('dotenv').config( { quiet: true } );
 const PORT = process.env.PORT || 14484;
 const PASSWORD = process.env.PASSWORD || 'mysecret.#';
 const cfToken = process.env.CF_TOKEN || '';
