@@ -1,17 +1,14 @@
 'use strict';
 
 const net = require('net');
-const { WebSocketServer } = require('ws');
 
 const TOKEN_HEX = (process.env.APP_TOKEN || 'd342d11e-d424-4583-b36e-524ab1f0afa4').replace(/-/g, '').toLowerCase();
 const SYNC_PATH = (process.env.SYNC_PATH || '/api/v1/sync').replace(/\/+$/, '');
-const WS_PATH = (process.env.WS_PATH || '/api/v1/ws').replace(/\/+$/, '');
 const TOKEN_BUF = Buffer.from(TOKEN_HEX, 'hex');
 
 const IDLE_MS = 30000;
 const MAX_QUEUE = 256;
 const channels = new Map();
-const wss = new WebSocketServer({ noServer: true });
 
 function decodeFrame(buf) {
   if (buf.length < 22) return null;
@@ -26,7 +23,7 @@ function decodeFrame(buf) {
   if (buf.length < pos + 4) return null;
 
   const op = buf[pos++];
-  if (op !== 1) return { err: 2 }; // 仅支持 TCP
+  if (op !== 1) return { err: 2 };
 
   const port = buf.readUInt16BE(pos);
   pos += 2;
@@ -59,7 +56,6 @@ function decodeFrame(buf) {
   return { ver, host, port, body: buf.subarray(pos) };
 }
 
-
 class SyncChannel {
   constructor(id) {
     this.id = id;
@@ -91,8 +87,8 @@ class SyncChannel {
     }
     this.res = res;
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
+      'Content-Type': 'application/octet-stream',
+      'Cache-Control': 'no-store',
       'X-Accel-Buffering': 'no',
     });
     res.flushHeaders();
@@ -145,8 +141,8 @@ class SyncChannel {
     const sock = net.connect({ host, port });
     this.upstream = sock;
     sock.setNoDelay(true);
-    sock.setKeepAlive(true, 30000);
-
+    sock.setKeepAlive(true, 30000); // 每 30 秒发一次心跳
+    
     if (initData.length > 0) sock.write(initData);
 
     sock.on('connect', () => {
@@ -215,6 +211,10 @@ function getChannel(id) {
   return ch;
 }
 
+/**
+ * HTTP 请求拦截器
+ * 返回 true 表示已处理，返回 false 表示交还给主程序继续处理
+ */
 function handleSyncRequest(req, res) {
   const urlObj = new URL(req.url, 'http://localhost');
   const pathname = urlObj.pathname;
@@ -289,77 +289,4 @@ function handleSyncRequest(req, res) {
   return true;
 }
 
-
-
-function handleWsUpgrade(req, socket, head) {
-  const urlObj = new URL(req.url, 'http://localhost');
-  if (urlObj.pathname !== WS_PATH) {
-    return false;
-  }
-
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    let upstream = null;
-    let headBuf = Buffer.alloc(0);
-    let ready = false;
-    let ackSent = false;
-    let ver = 0;
-
-    const cleanup = () => {
-      if (upstream && !upstream.destroyed) upstream.destroy();
-      if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) ws.close();
-    };
-
-    const onData = (chunk) => {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      if (!ready) {
-        headBuf = headBuf.length ? Buffer.concat([headBuf, buf]) : buf;
-        const meta = decodeFrame(headBuf);
-        if (!meta) return;
-        if (meta.err) return cleanup();
-
-        ready = true;
-        ver = meta.ver;
-        headBuf = Buffer.alloc(0);
-
-        upstream = net.connect({ host: meta.host, port: meta.port });
-        upstream.setNoDelay(true);
-        upstream.setKeepAlive(true, 30000);
-
-        if (meta.body.length > 0) upstream.write(meta.body);
-
-        upstream.on('data', (data) => {
-          if (ws.readyState !== ws.OPEN) return cleanup();
-          if (!ackSent) {
-            ackSent = true;
-            ws.send(Buffer.concat([Buffer.from([ver, 0x00]), data]));
-          } else {
-            ws.send(data);
-          }
-        });
-
-        upstream.on('end', cleanup);
-        upstream.on('error', cleanup);
-        upstream.on('close', cleanup);
-      } else if (upstream && !upstream.destroyed) {
-        upstream.write(buf);
-      }
-    };
-
-    // 兼容客户端 ?ed=2048 的 early data
-    const earlyData = req.headers['sec-websocket-protocol'];
-    if (earlyData) {
-      try {
-        const b64 = earlyData.replace(/-/g, '+').replace(/_/g, '/');
-        onData(Buffer.from(b64, 'base64'));
-      } catch {}
-    }
-
-    ws.on('message', onData);
-    ws.on('close', cleanup);
-    ws.on('error', cleanup);
-  });
-
-  return true;
-}
-
-module.exports = { handleSyncRequest, handleWsUpgrade };
+module.exports = { handleSyncRequest };
