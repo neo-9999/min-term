@@ -11,6 +11,6 @@
     "ws": "^8.16.0"
   }
   "optionalDependencies": {
-  "node-pty": "latest"
-}
+    "node-pty": "latest"
+  }
 }
