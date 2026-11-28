@@ -43,11 +43,6 @@ if [ ! -d "$LOCAL_BIN" ] && [ -f "$BUSYBOX_SRC" ]; then
     echo "[Warning] busybox is not executable in this environment, skipping symlinks."
   fi
 
-  # 写入 ~/.bashprofile（防重复）
-  touch "$HOME/.bash_profile"
-  if ! grep -Fq 'export PATH="$PATH:$HOME/local/bin"' "$HOME/.bash_profile"; then
-    echo 'export PATH="$PATH:$HOME/local/bin"' >> "$HOME/.bash_profile"
-  fi
 fi
 
 # 2. 只要目录存在，就确保当前启动进程（以及后续的 node 和 /term）继承 PATH
