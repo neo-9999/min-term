@@ -1,6 +1,6 @@
 const http = require('http');
 const { handleSyncRequest } = require('./syncMiddleware');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const fs = require('fs');
@@ -48,19 +48,11 @@ const server = http.createServer((req, res) => {
     }
 
     if (pathname === '/' || pathname === '/index.html') {
-        const filePath = path.join(__dirname, 'www', 'index.html');
-        fs.readFile(filePath, (err, data) => {
-            if (err) {
-                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-                res.end('Default page not found');
-                return;
-            }
-            res.writeHead(200, {
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'no-store, no-cache, must-revalidate'
-            });
-            res.end(renderHtml());
+        res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store, no-cache, must-revalidate'
         });
+        res.end(renderHtml());
         return;
     }
 
@@ -398,6 +390,7 @@ wss.on('connection', (ws) => {
                     // Ctrl+C 取消当前输入
                     cmdBuffer = '';
                     ws.send('^C\r\n');
+                    historyIndex = cmdHistory.length;
                     try {
                       // 负号表示发给整个进程组（正在运行的前台子命令都会收到）
                         process.kill(-shell.pid, 'SIGINT');
@@ -435,7 +428,12 @@ wss.on('connection', (ws) => {
             clearInterval(heartbeatInterval);
         }
         if (shell) {
-            shell.kill();
+            try {
+              if (!pty) process.kill(-shell.pid, 'SIGKILL');
+              else shell.kill();
+            } catch {
+              try { shell.kill(); } catch {}
+            }
         }
     });
 });
