@@ -24,4 +24,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY . /app
 
 EXPOSE 14484
-CMD ["node", "index.js"]
+CMD ["sh", "start.sh"]
