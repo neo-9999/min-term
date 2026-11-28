@@ -9,7 +9,7 @@
   "dependencies": {
     "dotenv": "^18.0.9",
     "ws": "^8.16.0"
-  }
+  },
   "optionalDependencies": {
     "node-pty": "latest"
   }
